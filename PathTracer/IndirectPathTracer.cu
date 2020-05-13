@@ -55,15 +55,14 @@ RT_PROGRAM void pathTracer() {
 
     if (nee) {
 
-		if (payload.depth == 0) {
-			payload.radiance += mv.emission;
-		}
-
 		// check for hitting light
 		for (int i = 0; i < qlights.size(); i++) {
 			float3 ln = normalize(cross(qlights[i].ab, qlights[i].ac));
 			float t = - (dot(qlights[i].a, ln) - dot(attrib.intersection, ln));
 			if (t < cf.epsilon && t > -cf.epsilon) { // hitting a light
+				if (payload.depth == 0) {
+					payload.radiance += mv.emission;
+				}
 				payload.done = true; 
 				return; 
 			}
