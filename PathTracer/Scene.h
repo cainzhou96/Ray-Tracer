@@ -28,8 +28,14 @@ struct Scene
 
     int lightSamples = 1;
     bool lightStratify = false;
-    bool nee = false; 
+
+    int nee = 0; 
+    int importanceSampling = 0; 
     bool russianRoulette = false;
+
+    int brdf = 0; 
+    float roughness = 0; 
+    float gamma = 0; 
 
     Scene()
     {

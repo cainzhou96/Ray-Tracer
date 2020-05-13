@@ -8,6 +8,17 @@
 #include "Light.h"
 #include "Config.h"
 
+#define IS_HEMISPEHRE 0
+#define IS_COSINE 1
+#define IS_BRDF 2
+
+#define NEE_OFF 0
+#define NEE_ON 1
+#define NEE_MIS 2
+
+#define BRDF_PHONG 0
+#define BRDF_GGX 1
+
 using namespace optix;
 
 // Declare light buffers
@@ -20,7 +31,12 @@ rtDeclareVariable(rtObject, root, , );
 rtDeclareVariable(int, lightSamples, , );
 rtDeclareVariable(int, lightStratify, , );
 rtDeclareVariable(int, nee, , );
+rtDeclareVariable(int, importanceSampling, , );
 rtDeclareVariable(int, russianRoulette, , );
+
+rtDeclareVariable(int, brdf, , );
+rtDeclareVariable(int, roughness, , );
+rtDeclareVariable(int, gamma, , );
 
 rtBuffer<Config> config; // Config
 
@@ -31,29 +47,47 @@ rtDeclareVariable(Attributes, attrib, attribute attrib, );
 RT_PROGRAM void pathTracer() {
     MaterialValue mv = attrib.mv;
     Config cf = config[0];
-    //float3 result = mv.emission;
 
-    // find wi
-    float theta = acos(rnd(payload.seed));
-    float phi = 2 * M_PIf * rnd(payload.seed);
-    float3 s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
-    float3 w = normalize(attrib.normal);
-    float3 a = make_float3(0, 1, 0);
-    if (length(w - a) < cf.epsilon || length(w + a) < cf.epsilon) {//avoid a too close to w
-        a = make_float3(1, 0, 0);
-    }
-    float3 u = normalize(cross(a, w));
-    float3 v = cross(w, u);
-    float3 wi = s.x * u + s.y * v + s.z * w;
+	// ### SAMPLE ###
+	float3 wi; 
+	if (importanceSampling == IS_HEMISPEHRE) {
+		float theta = acos(rnd(payload.seed));
+		float phi = 2 * M_PIf * rnd(payload.seed);
+		float3 s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+		float3 w = normalize(attrib.normal);
+		float3 a = make_float3(0, 1, 0);
+		if (length(w - a) < cf.epsilon || length(w + a) < cf.epsilon) {//avoid a too close to w
+			a = make_float3(1, 0, 0);
+		}
+		float3 u = normalize(cross(a, w));
+		float3 v = cross(w, u);
+		wi = s.x * u + s.y * v + s.z * w;
+	}
+	else if (importanceSampling == IS_COSINE) {
+		// TODO
+	}
+	else if (importanceSampling == IS_BRDF) {
+		// TODO
+	}
 
-    float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
-    float3 f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * 
-        pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+	// ### BRDF ###
+	float3 f; 
+	if (brdf == BRDF_PHONG) {
+		float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+		f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * 
+			pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+	}
+	else if (brdf == BRDF_GGX) {
+		// TODO
+	}
+
+	// ### PDF ###
     float inv_pdf = 2 * M_PIf;
 	int N = 1; 
     float3 throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) * inv_pdf / N;
 
-    if (nee) {
+	// ### NEE ###
+    if (nee == NEE_ON) {
 
 		// check for hitting light
 		for (int i = 0; i < qlights.size(); i++) {
@@ -103,8 +137,14 @@ RT_PROGRAM void pathTracer() {
 				if (shadowPayload.isVisible)
 				{
 					float3 wi = lightDir;
-					//rtPrintf("ln.x : %f, y: %f, z: %f\n", ln.x, ln.y, ln.z); 
-					float3 f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+					// ### BRDF ###
+					float3 f; 
+					if (brdf == BRDF_PHONG) {
+						f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+					}
+					else if (brdf == BRDF_GGX) {
+						// TODO
+					}
 					float G = clamp(dot(sn, wi), 0.0f, 1.0f) * clamp(dot(ln, wi), 0.0f, 1.0f) / (lightDist * lightDist);
 					tempResult += f * G;
 				}
@@ -116,7 +156,7 @@ RT_PROGRAM void pathTracer() {
 		// calculate radiance
 		payload.radiance += payload.throughput * dlResult;
     }
-    else { // not nee
+    else if (nee == NEE_OFF) { 
 
 		// check for hitting light
 		for (int i = 0; i < qlights.size(); i++) {
@@ -130,7 +170,10 @@ RT_PROGRAM void pathTracer() {
 		}
 
         payload.radiance += payload.throughput * mv.emission;
-    }
+	}
+	else if (nee == NEE_MIS) {
+		// TODO
+	}
 
 	// calculate Russian Roulette
 	if (russianRoulette) {
@@ -144,7 +187,6 @@ RT_PROGRAM void pathTracer() {
 			throughput *= boost;
 		}
 	}
-
     
     // for recursion
     payload.origin = attrib.intersection;

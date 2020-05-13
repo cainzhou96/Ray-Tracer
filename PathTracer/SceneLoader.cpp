@@ -1,5 +1,16 @@
 #include "SceneLoader.h"
 
+#define IS_HEMISPEHRE 0
+#define IS_COSINE 1
+#define IS_BRDF 2
+
+#define NEE_OFF 0
+#define NEE_ON 1
+#define NEE_MIS 2
+
+#define BRDF_PHONG 0
+#define BRDF_GGX 1
+
 void SceneLoader::rightMultiply(const optix::Matrix4x4& M)
 {
     optix::Matrix4x4& T = transStack.top();
@@ -255,15 +266,39 @@ std::shared_ptr<Scene> SceneLoader::load(std::string sceneFilename)
         } 
         else if (cmd == "nexteventestimation" && readValues(s, 1, svalues)) {
 			if (svalues[0] == "on")
-				scene->nee = true;
-			else
-				scene->nee = false;
+				scene->nee = NEE_ON;
+			else if (svalues[0] == "off")
+				scene->nee = NEE_OFF;
+            else if (svalues[0] == "mis")
+				scene->nee = NEE_MIS;
         }
         else if (cmd == "russianroulette" && readValues(s, 1, svalues)) {
             if (svalues[0] == "on")
                 scene->russianRoulette = true;
             else
                 scene->russianRoulette = false;
+        }
+        else if (cmd == "importancesampling" && readValues(s, 1, svalues)) {
+            if (svalues[0] == "hemisphere")
+                scene->importanceSampling = IS_HEMISPEHRE;
+            else if (svalues[0] == "cosine")
+                scene->importanceSampling = IS_COSINE;
+            else if (svalues[0] == "brdf")
+                scene->importanceSampling = IS_BRDF;
+        }
+        else if (cmd == "brdf" && readValues(s, 1, svalues)) {
+            if (svalues[0] == "phong")
+                scene->brdf = BRDF_PHONG;
+            else if (svalues[0] == "ggx")
+                scene->brdf = BRDF_GGX;
+        }
+        else if (cmd == "roughness" && readValues(s, 1, fvalues))
+        {
+            scene->roughness = fvalues[0]; 
+        }
+        else if (cmd == "gamma" && readValues(s, 1, fvalues))
+        {
+            scene->gamma = fvalues[0]; 
         }
     }
 
