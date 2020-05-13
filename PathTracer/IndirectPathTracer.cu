@@ -64,7 +64,17 @@ RT_PROGRAM void pathTracer() {
 		wi = s.x * u + s.y * v + s.z * w;
 	}
 	else if (importanceSampling == IS_COSINE) {
-		// TODO
+		float theta = acos(sqrt(rnd(payload.seed)));
+		float phi = 2 * M_PIf * rnd(payload.seed);
+		float3 s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+		float3 w = normalize(attrib.normal);
+		float3 a = make_float3(0, 1, 0);
+		if (length(w - a) < cf.epsilon || length(w + a) < cf.epsilon) {//avoid a too close to w
+			a = make_float3(1, 0, 0);
+		}
+		float3 u = normalize(cross(a, w));
+		float3 v = cross(w, u);
+		wi = s.x * u + s.y * v + s.z * w;
 	}
 	else if (importanceSampling == IS_BRDF) {
 		// TODO
@@ -82,9 +92,22 @@ RT_PROGRAM void pathTracer() {
 	}
 
 	// ### PDF ###
-    float inv_pdf = 2 * M_PIf;
-	int N = 1; 
-    float3 throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) * inv_pdf / N;
+	float inv_pdf; 
+	int N; 
+	float3 throughput; 
+	if (importanceSampling == IS_HEMISPEHRE) {
+		inv_pdf = 2 * M_PIf;
+		N = 1; 
+		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) * inv_pdf / N;
+	}
+	else if (importanceSampling == IS_COSINE) {
+		inv_pdf = M_PIf;
+		N = 1; 
+		throughput = f * inv_pdf / N;
+	}
+	else if (importanceSampling == IS_BRDF) {
+		// TODO
+	}
 
 	// ### NEE ###
     if (nee == NEE_ON) {
@@ -137,16 +160,17 @@ RT_PROGRAM void pathTracer() {
 				if (shadowPayload.isVisible)
 				{
 					float3 wi = lightDir;
-					// ### BRDF ###
+					// ### BRDF 2ND ###
 					float3 f; 
 					if (brdf == BRDF_PHONG) {
 						f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+						float G = clamp(dot(sn, wi), 0.0f, 1.0f) * clamp(dot(ln, wi), 0.0f, 1.0f) / (lightDist * lightDist);
+						f = f * G; 
 					}
 					else if (brdf == BRDF_GGX) {
 						// TODO
 					}
-					float G = clamp(dot(sn, wi), 0.0f, 1.0f) * clamp(dot(ln, wi), 0.0f, 1.0f) / (lightDist * lightDist);
-					tempResult += f * G;
+					tempResult += f;
 				}
 			}
 
