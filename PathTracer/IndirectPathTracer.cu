@@ -43,6 +43,17 @@ rtBuffer<Config> config; // Config
 // Declare attibutes 
 rtDeclareVariable(Attributes, attrib, attribute attrib, );
 
+float3 transformRay(float3 ray, float3 w, float epsilon); 
+float3 getCosineSampleRay(float epsilon); 
+float3 getHemisphereSampleRay(float epsilon); 
+float3 getBRDFSampleRay(Attributes attrib, float epsilon); 
+
+float3 getPhongBRDF(Attributes attrib, float3 wi); 
+float3 getGGXBRDF(Attributes attrib, float3 wi); 
+
+float getCosinePDF(); 
+float getHemispherePDF(); 
+float getBRDFPDF(Attributes attrib, float3 wi); 
 
 RT_PROGRAM void pathTracer() {
     MaterialValue mv = attrib.mv;
@@ -50,92 +61,40 @@ RT_PROGRAM void pathTracer() {
 
 	// ### SAMPLE ###
 	float3 wi; 
-	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
-	float t;
-
 	if (importanceSampling == IS_HEMISPEHRE) {
-		float theta = acos(rnd(payload.seed));
-		float phi = 2 * M_PIf * rnd(payload.seed);
-		float3 s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
-		float3 w = normalize(attrib.normal);
-		float3 a = make_float3(0, 1, 0);
-		if (length(w - a) < cf.epsilon || length(w + a) < cf.epsilon) {//avoid a too close to w
-			a = make_float3(1, 0, 0);
-		}
-		float3 u = normalize(cross(a, w));
-		float3 v = cross(w, u);
-		wi = s.x * u + s.y * v + s.z * w;
+		wi = getHemisphereSampleRay(cf.epsilon); 
 	}
 	else if (importanceSampling == IS_COSINE) {
-		float theta = acos(sqrt(rnd(payload.seed)));
-		float phi = 2 * M_PIf * rnd(payload.seed);
-		float3 s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
-		float3 w = normalize(attrib.normal);
-		float3 a = make_float3(0, 1, 0);
-		if (length(w - a) < cf.epsilon || length(w + a) < cf.epsilon) {//avoid a too close to w
-			a = make_float3(1, 0, 0);
-		}
-		float3 u = normalize(cross(a, w));
-		float3 v = cross(w, u);
-		wi = s.x * u + s.y * v + s.z * w;
+		wi = getCosineSampleRay(cf.epsilon); 
 	}
 	else if (importanceSampling == IS_BRDF) {
-		float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
-		float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
-		t = ks / (ks + kd);
-
-		float phi = 2 * M_PIf * rnd(payload.seed);
-		float theta = 0;
-		float3 s, w;
-		if (rnd(payload.seed) <= t) { //specular
-			theta = acos(powf(rnd(payload.seed), 1 / (mv.shininess + 1)));
-			s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
-			w = rl;
-		}
-		else { // diffuse
-			theta = acos(sqrt(rnd(payload.seed)));
-			s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
-			w = normalize(attrib.normal);
-		}
-		float3 a = make_float3(0, 1, 0);
-		if (length(w - a) < cf.epsilon || length(w + a) < cf.epsilon) {//avoid a too close to w
-			a = make_float3(1, 0, 0);
-		}
-		float3 u = normalize(cross(a, w));
-		float3 v = cross(w, u);
-		wi = s.x * u + s.y * v + s.z * w;
+		wi = getBRDFSampleRay(attrib, cf.epsilon); 
 	}
 
 	// ### BRDF ###
 	float3 f; 
 	if (brdf == BRDF_PHONG) {
-		
-		f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * 
-			pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+		f = getPhongBRDF(attrib, wi); 
 	}
 	else if (brdf == BRDF_GGX) {
-		// TODO
+		f = getGGXBRDF(attrib, wi); 
 	}
 
 	// ### PDF ###
-	float inv_pdf; 
+	float pdf; 
 	int N = 1; 
 	float3 throughput; 
 	if (importanceSampling == IS_HEMISPEHRE) {
-		inv_pdf = 2 * M_PIf;
-		N = 1; 
-		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) * inv_pdf / N;
+		pdf = getHemispherePDF();
+		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / pdf / N;
 	}
 	else if (importanceSampling == IS_COSINE) {
-		inv_pdf = M_PIf;
-		N = 1; 
-		throughput = f * inv_pdf / N;
+		pdf = getCosinePDF();
+		throughput = f / pdf / N;
 	}
 	else if (importanceSampling == IS_BRDF) {
-		inv_pdf = (1 - t) * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / M_PIf +
-			t * (mv.shininess + 1) / (2 * M_PIf) * pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
-		inv_pdf = 1.0f / inv_pdf;
-		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) * inv_pdf / N;
+		pdf = getBRDFPDF(attrib, wi); 
+		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / pdf / N;
 	}
 
 	// ### NEE ###
@@ -249,4 +208,93 @@ RT_PROGRAM void pathTracer() {
     payload.depth++; 
 }
 
+float3 transformRay(float3 ray, float3 w, float epsilon) {
+	float3 a = make_float3(0, 1, 0);
+	if (length(w - a) < epsilon || length(w + a) < epsilon) {//avoid a too close to w
+		a = make_float3(1, 0, 0);
+	}
+	float3 u = normalize(cross(a, w));
+	float3 v = cross(w, u);
+	return ray.x * u + ray.y * v + ray.z * w;
+}
 
+float3 getHemisphereSampleRay(float epsilon) {
+	float3 wi; 
+	float theta = acos(rnd(payload.seed));
+	float phi = 2 * M_PIf * rnd(payload.seed);
+	float3 s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+	float3 w = normalize(attrib.normal);
+	wi = transformRay(s, w, epsilon);
+	return wi; 
+}
+
+float3 getCosineSampleRay(float epsilon) {
+	float3 wi; 
+	float theta = acos(sqrt(rnd(payload.seed)));
+	float phi = 2 * M_PIf * rnd(payload.seed);
+	float3 s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+	float3 w = normalize(attrib.normal);
+	wi = transformRay(s, w, epsilon); 
+	return wi; 
+}
+
+float3 getBRDFSampleRay(Attributes attrib, float epsilon) {
+	MaterialValue mv = attrib.mv; 
+	float3 wi; 
+	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+	float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
+	float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
+	float t = ks / (ks + kd);
+
+	float phi = 2 * M_PIf * rnd(payload.seed);
+	float theta = 0;
+	float3 s, w;
+	if (rnd(payload.seed) <= t) { //specular
+		theta = acos(powf(rnd(payload.seed), 1 / (mv.shininess + 1)));
+		s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+		w = rl;
+	}
+	else { // diffuse
+		theta = acos(sqrt(rnd(payload.seed)));
+		s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+		w = normalize(attrib.normal);
+	}
+	wi = transformRay(s, w, epsilon); 
+	return wi; 
+}
+
+float3 getPhongBRDF(Attributes attrib, float3 wi) {
+	MaterialValue mv = attrib.mv; 
+	float3 f; 
+	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+	f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) *
+		pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+	return f; 
+}
+
+float3 getGGXBRDF(Attributes attrib, float3 wi) {
+	MaterialValue mv = attrib.mv; 
+	float3 f;
+	// TODO
+	return f;
+}
+
+float getHemispherePDF() {
+	return 1 / (2 * M_PIf);
+}
+
+float getCosinePDF() {
+	return 1 / M_PIf; 
+}
+
+float getBRDFPDF(Attributes attrib, float3 wi) {
+	MaterialValue mv = attrib.mv; 
+	float pdf; 
+	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+	float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
+	float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
+	float t = ks / (ks + kd);
+	pdf = (1 - t) * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / M_PIf +
+		t * (mv.shininess + 1) / (2 * M_PIf) * pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+	return pdf; 
+}
