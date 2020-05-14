@@ -50,6 +50,9 @@ RT_PROGRAM void pathTracer() {
 
 	// ### SAMPLE ###
 	float3 wi; 
+	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+	float t;
+
 	if (importanceSampling == IS_HEMISPEHRE) {
 		float theta = acos(rnd(payload.seed));
 		float phi = 2 * M_PIf * rnd(payload.seed);
@@ -77,13 +80,36 @@ RT_PROGRAM void pathTracer() {
 		wi = s.x * u + s.y * v + s.z * w;
 	}
 	else if (importanceSampling == IS_BRDF) {
-		// TODO
+		float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
+		float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
+		t = ks / (ks + kd);
+
+		float phi = 2 * M_PIf * rnd(payload.seed);
+		float theta = 0;
+		float3 s, w;
+		if (rnd(payload.seed) <= t) { //specular
+			theta = acos(powf(rnd(payload.seed), 1 / (mv.shininess + 1)));
+			s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+			w = rl;
+		}
+		else { // diffuse
+			theta = acos(sqrt(rnd(payload.seed)));
+			s = make_float3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+			w = normalize(attrib.normal);
+		}
+		float3 a = make_float3(0, 1, 0);
+		if (length(w - a) < cf.epsilon || length(w + a) < cf.epsilon) {//avoid a too close to w
+			a = make_float3(1, 0, 0);
+		}
+		float3 u = normalize(cross(a, w));
+		float3 v = cross(w, u);
+		wi = s.x * u + s.y * v + s.z * w;
 	}
 
 	// ### BRDF ###
 	float3 f; 
 	if (brdf == BRDF_PHONG) {
-		float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+		
 		f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * 
 			pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
 	}
@@ -93,7 +119,7 @@ RT_PROGRAM void pathTracer() {
 
 	// ### PDF ###
 	float inv_pdf; 
-	int N; 
+	int N = 1; 
 	float3 throughput; 
 	if (importanceSampling == IS_HEMISPEHRE) {
 		inv_pdf = 2 * M_PIf;
@@ -106,7 +132,10 @@ RT_PROGRAM void pathTracer() {
 		throughput = f * inv_pdf / N;
 	}
 	else if (importanceSampling == IS_BRDF) {
-		// TODO
+		inv_pdf = (1 - t) * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / M_PIf +
+			t * (mv.shininess + 1) / (2 * M_PIf) * pow(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+		inv_pdf = 1.0f / inv_pdf;
+		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) * inv_pdf / N;
 	}
 
 	// ### NEE ###
