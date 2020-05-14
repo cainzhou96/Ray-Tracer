@@ -35,8 +35,8 @@ rtDeclareVariable(int, importanceSampling, , );
 rtDeclareVariable(int, russianRoulette, , );
 
 rtDeclareVariable(int, brdf, , );
-rtDeclareVariable(int, roughness, , );
-rtDeclareVariable(int, gamma, , );
+rtDeclareVariable(float, roughness, , );
+rtDeclareVariable(float, gamma, , );
 
 rtBuffer<Config> config; // Config
 
@@ -225,6 +225,7 @@ float3 getHemisphereSampleRay(float epsilon) {
 	float3 s = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
 	float3 w = normalize(attrib.normal);
 	wi = transformRay(s, w, epsilon);
+	wi = normalize(wi); 
 	return wi; 
 }
 
@@ -235,6 +236,7 @@ float3 getCosineSampleRay(float epsilon) {
 	float3 s = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
 	float3 w = normalize(attrib.normal);
 	wi = transformRay(s, w, epsilon); 
+	wi = normalize(wi);
 	return wi; 
 }
 
@@ -260,6 +262,7 @@ float3 getBRDFSampleRay(Attributes attrib, float epsilon) {
 		w = normalize(attrib.normal);
 	}
 	wi = transformRay(s, w, epsilon); 
+	wi = normalize(wi);
 	return wi; 
 }
 
