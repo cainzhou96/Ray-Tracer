@@ -35,7 +35,7 @@ struct Scene
 
     int brdf = 0; 
     float roughness = 0; 
-    float gamma = 0; 
+    float gamma = 1; 
 
     Scene()
     {
