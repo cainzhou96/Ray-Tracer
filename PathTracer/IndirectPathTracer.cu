@@ -50,19 +50,20 @@ float3 getBRDFSampleRay(Attributes attrib);
 
 float3 getPhongBRDF(Attributes attrib, float3 wi); 
 float3 getGGXBRDF(Attributes attrib, float3 wi); 
-float power(float base, int exp);
 //float3 getGGXThroughput(Attributes attrib, float3& wi);
 
 float getCosinePDF(); 
 float getHemispherePDF(); 
 float getBRDFPDF(Attributes attrib, float3 wi); 
 
+float power(float base, int exp);
+void printF3(float3 v); 
+
 RT_PROGRAM void pathTracer() {
     MaterialValue mv = attrib.mv;
     Config cf = config[0];
 	float3 wi;
 	float3 throughput;
-
 
 	// ### SAMPLE ###
 	if (importanceSampling == IS_HEMISPEHRE) {
@@ -87,9 +88,10 @@ RT_PROGRAM void pathTracer() {
 	// ### PDF ###
 	float pdf;
 	int N = 1;
+	float3 n = normalize(attrib.normal); 
 	if (importanceSampling == IS_HEMISPEHRE) {
 		pdf = getHemispherePDF();
-		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / pdf / N;
+		throughput = f * clamp(dot(n, wi), 0.0f, 1.0f) / pdf / N;
 	}
 	else if (importanceSampling == IS_COSINE) {
 		pdf = getCosinePDF();
@@ -97,13 +99,7 @@ RT_PROGRAM void pathTracer() {
 	}
 	else if (importanceSampling == IS_BRDF) {
 		pdf = getBRDFPDF(attrib, wi);
-		//rtPrintf("%f\n", pdf);
-		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / pdf / N;
-		//rtPrintf("%f, %f, %f\n", f.x, f.y, f.z); 
-		if (isnan(throughput.y)) {
-			//rtPrintf("f: %f,%f,%f  dot: %f  pdf: %f\n", f.x, f.y, f.z, dot(attrib.normal, wi), pdf);
-		}
-			
+		throughput = f * clamp(dot(n, wi), 0.0f, 1.0f) / pdf / N;
 	}
 
 	// ### NEE ###
@@ -132,7 +128,7 @@ RT_PROGRAM void pathTracer() {
 			float3 sn = normalize(attrib.normal);
 			float3 ln = normalize(cross(qlights[i].ab, qlights[i].ac));
 			float3 wo = normalize(attrib.wo);
-			float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+			float3 rl = normalize(reflect(-wo, sn));
 			int stepNum = (int)sqrt((float)lightSamples);
 			for (int ls = 0; ls < lightSamples; ls++) {
 				float3 lp;
@@ -158,14 +154,13 @@ RT_PROGRAM void pathTracer() {
 				{
 					// ### BRDF 2ND ###
 					float3 f; 
+					float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
 					if (brdf == BRDF_PHONG) {
 						f = getPhongBRDF(attrib, lightDir);
-						float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
 						f = f * G; 
 					}
 					else if (brdf == BRDF_GGX) {
 						f = getGGXBRDF(attrib, lightDir) * clamp(dot(sn, lightDir), 0.0f, 1.0f);
-						float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
 						f = f * G; 
 					}
 					tempResult += f;
@@ -253,10 +248,12 @@ float3 getCosineSampleRay() {
 float3 getBRDFSampleRay(Attributes attrib) {
 	MaterialValue mv = attrib.mv; 
 	float3 wi; 
+	float3 wo = normalize(attrib.wo); 
+	float3 n = normalize(attrib.normal); 
 	float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
 	float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
 	if (brdf == BRDF_PHONG) {
-		float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+		float3 rl = normalize(-reflect(wo, n));
 		float t = ks / (ks + kd);
 
 		float phi = 2 * M_PIf * rnd(payload.seed);
@@ -270,27 +267,26 @@ float3 getBRDFSampleRay(Attributes attrib) {
 		else { // diffuse
 			theta = acosf(sqrt(rnd(payload.seed)));
 			s = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
-			w = normalize(attrib.normal);
+			w = normalize(n);
 		}
 		wi = transformRay(s, w); 
 	}
 	else if (brdf == BRDF_GGX) {
 		float t = fmaxf(0.25f, ks / (ks + kd));
-		float3 n = attrib.normal;
 		float phi = 2 * M_PIf * rnd(payload.seed);
 
 		if (rnd(payload.seed) <= t) { // specular
 			float rand = rnd(payload.seed);
 			float theta = atanf(roughness * sqrtf(rand) / sqrtf(1 - rand));
-			float3 h = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
-			float3 w = normalize(attrib.normal);
+			float3 h = normalize(make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta)));
+			float3 w = n;
 			h = transformRay(h, w);
-			wi = reflect(-attrib.wo, h);
+			wi = reflect(-wo, h);
 		}
 		else { // diffuse
 			float theta = acosf(sqrtf(rnd(payload.seed)));
 			float3 s = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
-			float3 w = normalize(attrib.normal);
+			float3 w = n;
 			wi = transformRay(s, w);
 		}
 	}
@@ -300,8 +296,10 @@ float3 getBRDFSampleRay(Attributes attrib) {
 
 float3 getPhongBRDF(Attributes attrib, float3 wi) {
 	MaterialValue mv = attrib.mv; 
+	float3 wo = normalize(attrib.wo); 
+	float3 n = normalize(attrib.normal); 
+	float3 rl = normalize(reflect(-wo, n));
 	float3 f; 
-	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
 	f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) *
 		power(dot(rl, wi), mv.shininess);
 	return f; 
@@ -309,26 +307,27 @@ float3 getPhongBRDF(Attributes attrib, float3 wi) {
 
 float3 getGGXBRDF(Attributes attrib, float3 wi) {
 	MaterialValue mv = attrib.mv; 
-	float3 n = attrib.normal;
-	float3 h = normalize(wi + attrib.wo);
+	float3 wo = normalize(attrib.wo);
+	float3 n = normalize(attrib.normal);
+	float3 h = normalize(wi + wo);
 	float3 f_ggx;
-	if (dot(wi, n) <= 0 || dot(attrib.wo, n) <= 0) {
+	if (dot(wi, n) <= 0 || dot(wo, n) <= 0) {
 		f_ggx = make_float3(0, 0, 0);
 	}
 	else {
-		float alpha_cube = roughness * roughness;
+		float alpha_square = roughness * roughness;
 		float theta_h = acosf(dot(h, n));
-		float D = alpha_cube / (M_PIf * power(cosf(theta_h), 4) *
-			power((alpha_cube + tanf(theta_h) * tanf(theta_h)), 2));
+		float D = alpha_square / (M_PIf * power(cosf(theta_h), 4) *
+			power((alpha_square + tanf(theta_h) * tanf(theta_h)), 2));
 
 		float theta_wi = acosf(dot(wi, n));
-		float G1_wi = 2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wi) * tanf(theta_wi)));
-		float theta_wo = acosf(dot(attrib.wo, n));
-		float G1_wo = 2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wo) * tanf(theta_wo)));
+		float G1_wi = 2.0f / (1 + sqrtf(1 + alpha_square * tanf(theta_wi) * tanf(theta_wi)));
+		float theta_wo = acosf(dot(wo, n));
+		float G1_wo = 2.0f / (1 + sqrtf(1 + alpha_square * tanf(theta_wo) * tanf(theta_wo)));
 		float G = G1_wi * G1_wo;
 
-		float3 F = mv.specular + (make_float3(1) - mv.specular) * power((1 - dot(wi, h)), 5);
-		f_ggx = F * G * D / (4 * dot(wi, n) * dot(attrib.wo, n));
+		float3 F = mv.specular + (make_float3(1.0f, 1.0f, 1.0f) - mv.specular) * power((1 - dot(wi, h)), 5);
+		f_ggx = F * G * D / (4 * dot(wi, n) * dot(wo, n));
 	}
 	float3 f = mv.diffuse / M_PIf + f_ggx;
 	return f;
@@ -344,7 +343,9 @@ float getCosinePDF() {
 
 float getBRDFPDF(Attributes attrib, float3 wi) {
 	MaterialValue mv = attrib.mv; 
-	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
+	float3 wo = normalize(attrib.wo);
+	float3 n = normalize(attrib.normal); 
+	float3 rl = normalize(reflect(-wo, n));
 	float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
 	float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
 	float pdf; 
@@ -352,17 +353,16 @@ float getBRDFPDF(Attributes attrib, float3 wi) {
 		float t = ks / (ks + kd);
 		if (isnan(t))
 			t = 0;
-		pdf = (1 - t) * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / M_PIf +
+		pdf = (1 - t) * clamp(dot(n, wi), 0.0f, 1.0f) / M_PIf +
 			t * (mv.shininess + 1) / (2 * M_PIf) * power(dot(rl, wi), mv.shininess);
 	}
 	else if (brdf == BRDF_GGX) {
 		float t = fmaxf(0.25f, ks / (ks + kd));
-		float3 n = attrib.normal;
-		float3 h = normalize(wi + attrib.wo);
-		float alpha_cube = roughness * roughness;
+		float3 h = normalize(wi + wo);
+		float alpha_square = roughness * roughness;
 		float theta_h = acosf(dot(h, n));
-		float D = alpha_cube / (M_PIf * power(cosf(theta_h), 4) *
-			power((alpha_cube + tanf(theta_h) * tanf(theta_h)), 2));
+		float D = alpha_square / (M_PIf * power(cosf(theta_h), 4) *
+			power((alpha_square + tanf(theta_h) * tanf(theta_h)), 2));
 		pdf = (1 - t) * dot(n, wi) / M_PIf + t * D * dot(n, h) / (4 * dot(h, wi));
 	}
 	return pdf; 
@@ -377,6 +377,10 @@ float power(float base, int exp) {
 		res *= base;
 	}
 	return res;
+}
+
+void printF3(float3 v) {
+	rtPrintf("%f, %f, %f\n", v.x, v.y, v.z); 
 }
 
 /*
