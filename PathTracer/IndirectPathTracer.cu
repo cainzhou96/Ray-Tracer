@@ -34,7 +34,7 @@ rtDeclareVariable(int, nee, , );
 rtDeclareVariable(int, importanceSampling, , );
 rtDeclareVariable(int, russianRoulette, , );
 
-rtDeclareVariable(int, brdf, , );
+//rtDeclareVariable(int, brdf, , );
 rtDeclareVariable(float, roughness, , );
 rtDeclareVariable(float, gamma, , );
 
@@ -77,10 +77,10 @@ RT_PROGRAM void pathTracer() {
 
 	// ### BRDF ###
 	float3 f; 
-	if (brdf == BRDF_PHONG) {
+	if (mv.brdf == BRDF_PHONG) {
 		f = getPhongBRDF(attrib, wi);
 	}
-	else if (brdf == BRDF_GGX) {
+	else if (mv.brdf == BRDF_GGX) {
 		f = getGGXBRDF(attrib, wi);
 	}
 
@@ -158,12 +158,12 @@ RT_PROGRAM void pathTracer() {
 				{
 					// ### BRDF 2ND ###
 					float3 f; 
-					if (brdf == BRDF_PHONG) {
+					if (mv.brdf == BRDF_PHONG) {
 						f = getPhongBRDF(attrib, lightDir);
 						float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
 						f = f * G; 
 					}
-					else if (brdf == BRDF_GGX) {
+					else if (mv.brdf == BRDF_GGX) {
 						f = getGGXBRDF(attrib, lightDir) * clamp(dot(sn, lightDir), 0.0f, 1.0f);
 						float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
 						f = f * G; 
@@ -255,7 +255,7 @@ float3 getBRDFSampleRay(Attributes attrib) {
 	float3 wi; 
 	float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
 	float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
-	if (brdf == BRDF_PHONG) {
+	if (mv.brdf == BRDF_PHONG) {
 		float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
 		float t = ks / (ks + kd);
 
@@ -268,13 +268,13 @@ float3 getBRDFSampleRay(Attributes attrib) {
 			w = rl;
 		}
 		else { // diffuse
-			theta = acosf(sqrt(rnd(payload.seed)));
+			theta = acosf(sqrtf(rnd(payload.seed)));
 			s = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
 			w = normalize(attrib.normal);
 		}
 		wi = transformRay(s, w); 
 	}
-	else if (brdf == BRDF_GGX) {
+	else if (mv.brdf == BRDF_GGX) {
 		float t = fmaxf(0.25f, ks / (ks + kd));
 		float3 n = attrib.normal;
 		float phi = 2 * M_PIf * rnd(payload.seed);
@@ -310,27 +310,30 @@ float3 getPhongBRDF(Attributes attrib, float3 wi) {
 float3 getGGXBRDF(Attributes attrib, float3 wi) {
 	MaterialValue mv = attrib.mv; 
 	float3 n = attrib.normal;
-	float3 h = normalize(wi + attrib.wo);
-	float3 f_ggx;
+	
+	float3 f;
 	if (dot(wi, n) <= 0 || dot(attrib.wo, n) <= 0) {
-		f_ggx = make_float3(0, 0, 0);
+		f = make_float3(0, 0, 0);
 	}
 	else {
+		float3 h = normalize(wi + attrib.wo);
 		float alpha_cube = roughness * roughness;
 		float theta_h = acosf(dot(h, n));
 		float D = alpha_cube / (M_PIf * power(cosf(theta_h), 4) *
 			power((alpha_cube + tanf(theta_h) * tanf(theta_h)), 2));
 
 		float theta_wi = acosf(dot(wi, n));
-		float G1_wi = 2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wi) * tanf(theta_wi)));
+		float G1_wi = dot(wi, n) > 0 ?
+			2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wi) * tanf(theta_wi))) : 0;
 		float theta_wo = acosf(dot(attrib.wo, n));
-		float G1_wo = 2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wo) * tanf(theta_wo)));
+		float G1_wo = dot(attrib.wo, n) > 0 ?
+			2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wo) * tanf(theta_wo))) : 0;
 		float G = G1_wi * G1_wo;
 
-		float3 F = mv.specular + (make_float3(1) - mv.specular) * power((1 - dot(wi, h)), 5);
-		f_ggx = F * G * D / (4 * dot(wi, n) * dot(attrib.wo, n));
+		float3 F = mv.specular + (1 - mv.specular) * power((1 - dot(wi, h)), 5);
+		float3 f_ggx = F * G * D / (4 * dot(wi, n) * dot(attrib.wo, n));
+		f = mv.diffuse / M_PIf + f_ggx;
 	}
-	float3 f = mv.diffuse / M_PIf + f_ggx;
 	return f;
 }
 
@@ -348,14 +351,14 @@ float getBRDFPDF(Attributes attrib, float3 wi) {
 	float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
 	float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
 	float pdf; 
-	if (brdf == BRDF_PHONG) {
+	if (mv.brdf == BRDF_PHONG) {
 		float t = ks / (ks + kd);
 		if (isnan(t))
 			t = 0;
 		pdf = (1 - t) * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / M_PIf +
 			t * (mv.shininess + 1) / (2 * M_PIf) * power(dot(rl, wi), mv.shininess);
 	}
-	else if (brdf == BRDF_GGX) {
+	else if (mv.brdf == BRDF_GGX) {
 		float t = fmaxf(0.25f, ks / (ks + kd));
 		float3 n = attrib.normal;
 		float3 h = normalize(wi + attrib.wo);

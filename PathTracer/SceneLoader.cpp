@@ -63,6 +63,7 @@ std::shared_ptr<Scene> SceneLoader::load(std::string sceneFilename)
     mv.specular = optix::make_float3(0);
     mv.emission = optix::make_float3(0);
     mv.shininess = 1;
+    mv.brdf = 0;
     defaultMv = mv;
 
     optix::float3 attenuation = optix::make_float3(1, 0, 0);
@@ -288,9 +289,9 @@ std::shared_ptr<Scene> SceneLoader::load(std::string sceneFilename)
         }
         else if (cmd == "brdf" && readValues(s, 1, svalues)) {
             if (svalues[0] == "phong")
-                scene->brdf = BRDF_PHONG;
+                mv.brdf = BRDF_PHONG;
             else if (svalues[0] == "ggx")
-                scene->brdf = BRDF_GGX;
+                mv.brdf = BRDF_GGX;
         }
         else if (cmd == "roughness" && readValues(s, 1, fvalues))
         {
