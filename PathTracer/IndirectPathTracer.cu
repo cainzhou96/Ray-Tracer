@@ -50,6 +50,7 @@ float3 getBRDFSampleRay(Attributes attrib);
 
 float3 getPhongBRDF(Attributes attrib, float3 wi); 
 float3 getGGXBRDF(Attributes attrib, float3 wi); 
+float power(float base, int exp);
 //float3 getGGXThroughput(Attributes attrib, float3& wi);
 
 float getCosinePDF(); 
@@ -96,10 +97,13 @@ RT_PROGRAM void pathTracer() {
 	}
 	else if (importanceSampling == IS_BRDF) {
 		pdf = getBRDFPDF(attrib, wi);
-		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / pdf / N;
-		//rtPrintf("%f, %f, %f\n", throughput.x, throughput.y, throughput.z); 
-		if (isnan(throughput.x))
-			rtPrintf("a"); 
+		//rtPrintf("%f\n", pdf);
+		throughput = f * dot(attrib.normal, wi) / pdf / N;
+		//rtPrintf("%f, %f, %f\n", f.x, f.y, f.z); 
+		if (isnan(throughput.y)) {
+			//rtPrintf("f: %f,%f,%f  dot: %f  pdf: %f\n", f.x, f.y, f.z, dot(attrib.normal, wi), pdf);
+		}
+			
 	}
 
 	// ### NEE ###
@@ -155,7 +159,7 @@ RT_PROGRAM void pathTracer() {
 					// ### BRDF 2ND ###
 					float3 f; 
 					if (brdf == BRDF_PHONG) {
-						f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * powf(clamp(dot(rl, lightDir), 0.0f, 1.0f), mv.shininess);
+						f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * power(dot(rl, lightDir), mv.shininess);
 						float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
 						f = f * G; 
 					}
@@ -257,7 +261,7 @@ float3 getBRDFSampleRay(Attributes attrib) {
 		float theta = 0;
 		float3 s, w;
 		if (rnd(payload.seed) <= t) { //specular
-			theta = acosf(powf(rnd(payload.seed), 1 / (mv.shininess + 1)));
+			theta = acosf(power(rnd(payload.seed), 1 / (mv.shininess + 1)));
 			s = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
 			w = rl;
 		}
@@ -297,7 +301,7 @@ float3 getPhongBRDF(Attributes attrib, float3 wi) {
 	float3 f; 
 	float3 rl = normalize(reflect(-attrib.wo, attrib.normal));
 	f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) *
-		powf(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+		power(dot(rl, wi), mv.shininess);
 	return f; 
 }
 
@@ -306,14 +310,14 @@ float3 getGGXBRDF(Attributes attrib, float3 wi) {
 	float3 n = attrib.normal;
 	float3 h = normalize(wi + attrib.wo);
 	float3 f_ggx;
-	if (dot(wi, n) < 0 || dot(attrib.wo, n) < 0) {
+	if (dot(wi, n) <= 0 || dot(attrib.wo, n) <= 0) {
 		f_ggx = make_float3(0, 0, 0);
 	}
 	else {
 		float alpha_cube = roughness * roughness;
 		float theta_h = acosf(dot(h, n));
-		float D = alpha_cube / (M_PIf * powf(fabsf(cosf(theta_h)), 4) *
-			powf(fabsf((alpha_cube + tanf(theta_h) * tanf(theta_h))), 2));
+		float D = alpha_cube / (M_PIf * power(cosf(theta_h), 4) *
+			power((alpha_cube + tanf(theta_h) * tanf(theta_h)), 2));
 
 		float theta_wi = acosf(dot(wi, n));
 		float G1_wi = 2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wi) * tanf(theta_wi)));
@@ -321,7 +325,7 @@ float3 getGGXBRDF(Attributes attrib, float3 wi) {
 		float G1_wo = 2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wo) * tanf(theta_wo)));
 		float G = G1_wi * G1_wo;
 
-		float3 F = mv.specular + (1 - mv.specular) * powf((1 - dot(wi, h)), 5);
+		float3 F = mv.specular + (make_float3(1) - mv.specular) * power((1 - dot(wi, h)), 5);
 		f_ggx = F * G * D / (4 * dot(wi, n) * dot(attrib.wo, n));
 	}
 	float3 f = mv.diffuse / M_PIf + f_ggx;
@@ -344,8 +348,10 @@ float getBRDFPDF(Attributes attrib, float3 wi) {
 	float pdf; 
 	if (brdf == BRDF_PHONG) {
 		float t = ks / (ks + kd);
+		if (isnan(t))
+			t = 0;
 		pdf = (1 - t) * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / M_PIf +
-			t * (mv.shininess + 1) / (2 * M_PIf) * powf(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
+			t * (mv.shininess + 1) / (2 * M_PIf) * power(dot(rl, wi), mv.shininess);
 	}
 	else if (brdf == BRDF_GGX) {
 		float t = fmaxf(0.25f, ks / (ks + kd));
@@ -353,11 +359,22 @@ float getBRDFPDF(Attributes attrib, float3 wi) {
 		float3 h = normalize(wi + attrib.wo);
 		float alpha_cube = roughness * roughness;
 		float theta_h = acosf(dot(h, n));
-		float D = alpha_cube / (M_PIf * powf(fabsf(cosf(theta_h)), 4) *
-			powf(fabsf((alpha_cube + tanf(theta_h) * tanf(theta_h))), 2));
-		pdf = (1 - t) * clamp(dot(n, wi), 0.0f, 1.0f) / M_PIf + t * D * dot(n, h) / (4 * dot(h, wi));
+		float D = alpha_cube / (M_PIf * power(cosf(theta_h), 4) *
+			power((alpha_cube + tanf(theta_h) * tanf(theta_h)), 2));
+		pdf = (1 - t) * dot(n, wi) / M_PIf + t * D * dot(n, h) / (4 * dot(h, wi));
 	}
 	return pdf; 
+}
+
+
+float power(float base, int exp) {
+	if (exp == 0)
+		return 1.0f;
+	float res = base;
+	for (int i = 1; i < exp; i++) {
+		res *= base;
+	}
+	return res;
 }
 
 /*
