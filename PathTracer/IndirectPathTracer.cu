@@ -98,7 +98,7 @@ RT_PROGRAM void pathTracer() {
 	else if (importanceSampling == IS_BRDF) {
 		pdf = getBRDFPDF(attrib, wi);
 		//rtPrintf("%f\n", pdf);
-		throughput = f * dot(attrib.normal, wi) / pdf / N;
+		throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / pdf / N;
 		//rtPrintf("%f, %f, %f\n", f.x, f.y, f.z); 
 		if (isnan(throughput.y)) {
 			//rtPrintf("f: %f,%f,%f  dot: %f  pdf: %f\n", f.x, f.y, f.z, dot(attrib.normal, wi), pdf);
@@ -159,12 +159,14 @@ RT_PROGRAM void pathTracer() {
 					// ### BRDF 2ND ###
 					float3 f; 
 					if (brdf == BRDF_PHONG) {
-						f = mv.diffuse / M_PIf + mv.specular * (mv.shininess + 2) / (2 * M_PIf) * power(dot(rl, lightDir), mv.shininess);
+						f = getPhongBRDF(attrib, lightDir);
 						float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
 						f = f * G; 
 					}
 					else if (brdf == BRDF_GGX) {
-						f = getGGXBRDF(attrib, lightDir);
+						f = getGGXBRDF(attrib, lightDir) * clamp(dot(sn, lightDir), 0.0f, 1.0f);
+						float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot(ln, lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
+						f = f * G; 
 					}
 					tempResult += f;
 				}
