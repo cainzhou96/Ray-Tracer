@@ -11,8 +11,8 @@ struct MaterialValue
 {
     optix::float3 ambient, diffuse, specular, emission;
     float shininess;
-    int brdf; 
     float roughness; 
+    int brdf; //0 for phong, 1 for ggx
 };
 
 struct Triangle

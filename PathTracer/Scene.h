@@ -34,7 +34,7 @@ struct Scene
     bool russianRoulette = false;
 
     int brdf = 0; 
-    float roughness = 0; 
+    float roughness = 1; 
     float gamma = 1; 
 
     Scene()

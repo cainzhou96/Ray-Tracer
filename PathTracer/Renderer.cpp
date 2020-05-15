@@ -221,7 +221,7 @@ void Renderer::buildScene()
         programs["integrator"]["nee"]->setInt(scene->nee);
         programs["integrator"]["russianRoulette"]->setInt(scene->russianRoulette);
         programs["integrator"]["importanceSampling"]->setInt(scene->importanceSampling);
-        programs["integrator"]["brdf"]->setInt(scene->brdf);
+        //programs["integrator"]["brdf"]->setInt(scene->brdf);
         programs["integrator"]["roughness"]->setFloat(scene->roughness);
         programs["integrator"]["gamma"]->setFloat(scene->gamma);
     }
