@@ -82,9 +82,6 @@ RT_PROGRAM void pathTracer() {
 	else if (mv.brdf == BRDF_GGX) {
 		f = getGGXBRDF(attrib, wi);
 	}
-	if (!isfinite(f.x) || !isfinite(f.y) || !isfinite(f.z)) {
-		rtPrintf("nan or infinite\n"); 
-	}
 
 	// ### PDF ###
 	float pdf;
@@ -100,17 +97,13 @@ RT_PROGRAM void pathTracer() {
 	}
 	else if (importanceSampling == IS_BRDF) {
 		pdf = getBRDFPDF(attrib, wi);
-		throughput = f * clamp(dot(n, wi), 0.0f, 1.0f) / pdf / N;
+		if (pdf <= 0) {
+			throughput = make_float3(0, 0, 0); 
+		}
+		else {
+			throughput = f * clamp(dot(n, wi), 0.0f, 1.0f) / pdf / N;
+		}
 	}
-	float3 temp = f / pdf; 
-	if (!isfinite(temp.x)) {
-		rtPrintf("%f\n", pdf); 
-	}
-	/*
-	if (!isfinite(throughput.x) || !isfinite(throughput.y) || !isfinite(throughput.z)) {
-		rtPrintf("nan or infinite\n"); 
-	}
-	*/
 
 	// ### NEE ###
     if (nee == NEE_ON) {
@@ -201,12 +194,6 @@ RT_PROGRAM void pathTracer() {
 	else if (nee == NEE_MIS) {
 		// TODO
 	}
-
-	/*
-	if (!isfinite(payload.radiance.x) || !isfinite(payload.radiance.y) || !isfinite(payload.radiance.z)) {
-		rtPrintf("nan or infinite\n"); 
-	}
-	*/
 
 	// calculate Russian Roulette
 	if (russianRoulette) {
@@ -390,10 +377,9 @@ float getBRDFPDF(Attributes attrib, float3 wi) {
 		else {
 			theta_h = 0; 
 		}
-
 		float D = alpha_square / (M_PIf * power(cosf(theta_h), 4) *
 			power((alpha_square + tanf(theta_h) * tanf(theta_h)), 2));
-		pdf = (1 - t) * dot(n, wi) / M_PIf + t * D * dot(n, h) / (4 * dot(h, wi));
+		pdf = (1 - t) * clamp(dot(n, wi), 0.0f, 1.0f) / M_PIf + t * D * dot(n, h) / (4 * clamp(dot(h, wi), 0.0f, 1.0f));
 	}
 	return pdf; 
 }
