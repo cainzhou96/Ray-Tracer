@@ -38,7 +38,7 @@ namespace Viewer
             " (" + std::to_string(cf) + "/" + std::to_string(nf) + ")";
         glutSetWindowTitle(title.c_str());
 
-        sutil::displayBufferGL(renderer->getResultBuffer(),
+        sutil::displayBufferGL(renderer->getGammaResultBuffer(),
             BUFFER_PIXEL_FORMAT_RGB, true);
 
         glutSwapBuffers();

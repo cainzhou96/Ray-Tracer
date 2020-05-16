@@ -34,8 +34,6 @@ rtDeclareVariable(int, nee, , );
 rtDeclareVariable(int, importanceSampling, , );
 rtDeclareVariable(int, russianRoulette, , );
 
-//rtDeclareVariable(int, brdf, , );
-rtDeclareVariable(float, roughness, , );
 rtDeclareVariable(float, gamma, , );
 
 rtBuffer<Config> config; // Config
@@ -277,7 +275,7 @@ float3 getBRDFSampleRay(Attributes attrib) {
 
 		if (rnd(payload.seed) <= t) { // specular
 			float rand = rnd(payload.seed);
-			float theta = atanf(roughness * sqrtf(rand) / sqrtf(1 - rand));
+			float theta = atanf(mv.roughness * sqrtf(rand) / sqrtf(1 - rand));
 			float3 h = normalize(make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta)));
 			float3 w = n;
 			h = transformRay(h, w);
@@ -316,7 +314,7 @@ float3 getGGXBRDF(Attributes attrib, float3 wi) {
 		f_ggx = make_float3(0, 0, 0);
 	}
 	else {
-		float alpha_square = roughness * roughness;
+		float alpha_square = mv.roughness * mv.roughness;
 		float theta_h = acosf(dot(h, n));
 		float D = alpha_square / (M_PIf * power(cosf(theta_h), 4) *
 			power((alpha_square + tanf(theta_h) * tanf(theta_h)), 2));
@@ -360,7 +358,7 @@ float getBRDFPDF(Attributes attrib, float3 wi) {
 	else if (mv.brdf == BRDF_GGX) {
 		float t = fmaxf(0.25f, ks / (ks + kd));
 		float3 h = normalize(wi + wo);
-		float alpha_square = roughness * roughness;
+		float alpha_square = mv.roughness * mv.roughness;
 		float theta_h = acosf(dot(h, n));
 		float D = alpha_square / (M_PIf * power(cosf(theta_h), 4) *
 			power((alpha_square + tanf(theta_h) * tanf(theta_h)), 2));
@@ -384,61 +382,3 @@ void printF3(float3 v) {
 	rtPrintf("%f, %f, %f\n", v.x, v.y, v.z); 
 }
 
-/*
-float3 getGGXThroughput(Attributes attrib, float3& wi) {
-	MaterialValue mv = attrib.mv;
-
-	float ks = (mv.specular.x + mv.specular.y + mv.specular.z) / 3.0f;
-	float kd = (mv.diffuse.x + mv.diffuse.y + mv.diffuse.z) / 3.0f;
-	float t = fmaxf(0.25f, ks / (ks + kd));
-	float3 n = attrib.normal;
-
-	// sample
-	if (rnd(payload.seed) <= t) { // specular
-		float phi = 2 * M_PIf * rnd(payload.seed);
-		float rand = rnd(payload.seed);
-		float theta = atanf(roughness * sqrtf(rand) / sqrtf(1 - rand));
-		float3 h = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
-		h = transformRay(h, n);
-		wi = reflect(-attrib.wo, h);
-	}
-	else { // diffuse
-		float phi = 2 * M_PIf * rnd(payload.seed);
-		float theta = acosf(sqrtf(rnd(payload.seed)));
-		float3 s = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
-		wi = transformRay(s, n);
-	}
-	wi = normalize(wi); 
-
-	// BRDF
-	float3 h = normalize(wi + attrib.wo);
-	float alpha_cube = roughness * roughness;
-	float theta_h = acosf(dot(h, n));
-	float D = alpha_cube / (M_PIf * pow(cosf(theta_h), 4) *
-		pow((alpha_cube + tanf(theta_h) * tanf(theta_h)), 2));
-
-	float theta_wi = acosf(dot(wi, n));
-	float G1_wi = dot(wi, n) > 0 ?
-		2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wi) * tanf(theta_wi))) : 0;
-	float theta_wo = acosf(dot(attrib.wo, n));
-	float G1_wo = dot(attrib.wo, n) > 0 ?
-		2.0f / (1 + sqrtf(1 + alpha_cube * tanf(theta_wo) * tanf(theta_wo))) : 0;
-	float G = G1_wi * G1_wo;
-
-	float3 F = mv.specular + (1 - mv.specular) * pow((1 - dot(wi, h)), 5);
-	float3 f_ggx; 
-	if (dot(wi, n) < 0 || dot(attrib.wo, n) < 0) {
-		f_ggx = make_float3(0, 0, 0); 
-	}
-	else {
-		f_ggx = F * G * D / (4 * dot(wi, n) * dot(attrib.wo, n));
-	}
-	float3 f = mv.diffuse / M_PIf + f_ggx;
-
-	//PDF
-	float pdf = (1 - t) * dot(n, wi) / M_PIf + t * D * dot(n, h) / (4 * dot(h, wi));
-
-	float3 throughput = f * clamp(dot(attrib.normal, wi), 0.0f, 1.0f) / pdf;
-	return throughput;
-}
-*/

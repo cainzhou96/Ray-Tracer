@@ -27,6 +27,7 @@ class Renderer
 {
     optix::Context context; // an OptiX conext that encapsulates all OptiX resources
     optix::Buffer resultBuffer; // a buffer that stores the rendered image
+    optix::Buffer gammaResultBuffer; // a buffer that stores the rendered image with gamma correction
     std::unordered_map<std::string, optix::Program> programs; // a map that maps a name to a program
     std::vector<std::string> integrators; // a list of supported integrators
     std::shared_ptr<Scene> scene;
@@ -76,6 +77,11 @@ public:
      */
     std::vector<unsigned char> getResult();
 
+    /**
+    * Apply gamma correction to result buffer. 
+    */
+    void applyGammaCorrection(); 
+
     // Some getters
     std::string getOutputFilename() { return outputFilename; }
     int getWidth() { return width; }
@@ -83,4 +89,5 @@ public:
     int getNumFrames() { return numFrames; }
     int getCurrentFrame() { return currentFrame; }
     optix::Buffer& getResultBuffer() { return resultBuffer; }
+    optix::Buffer& getGammaResultBuffer() { return gammaResultBuffer; }
 };

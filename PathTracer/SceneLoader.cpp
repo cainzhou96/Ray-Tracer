@@ -64,6 +64,7 @@ std::shared_ptr<Scene> SceneLoader::load(std::string sceneFilename)
     mv.emission = optix::make_float3(0);
     mv.shininess = 1;
     mv.brdf = 0;
+    mv.roughness = 1; 
     defaultMv = mv;
 
     optix::float3 attenuation = optix::make_float3(1, 0, 0);
@@ -295,7 +296,7 @@ std::shared_ptr<Scene> SceneLoader::load(std::string sceneFilename)
         }
         else if (cmd == "roughness" && readValues(s, 1, fvalues))
         {
-            scene->roughness = fvalues[0]; 
+            mv.roughness = fvalues[0]; 
         }
         else if (cmd == "gamma" && readValues(s, 1, fvalues))
         {

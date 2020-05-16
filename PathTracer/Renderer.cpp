@@ -31,6 +31,7 @@ void Renderer::run(bool progressive)
         // Render a frame.
         context["frameID"]->setInt(++currentFrame);
         context->launch(0, width, height);
+        applyGammaCorrection(); 
 
         // Only render a frame in progressive mode
         if (progressive) break;
@@ -81,7 +82,7 @@ std::vector<unsigned char> Renderer::getResult()
         return static_cast<unsigned char>(v * 255);
     };
 
-    float3* bufferData = (float3*)resultBuffer->map();
+    float3* bufferData = (float3*)gammaResultBuffer->map();
 
     // Store the data into a byte vector
     std::vector<unsigned char> imageData(width * height * 4);
@@ -98,7 +99,7 @@ std::vector<unsigned char> Renderer::getResult()
         }
     }
 
-    resultBuffer->unmap();
+    gammaResultBuffer->unmap();
 
     return imageData;
 }
@@ -221,11 +222,29 @@ void Renderer::buildScene()
         programs["integrator"]["nee"]->setInt(scene->nee);
         programs["integrator"]["russianRoulette"]->setInt(scene->russianRoulette);
         programs["integrator"]["importanceSampling"]->setInt(scene->importanceSampling);
-        //programs["integrator"]["brdf"]->setInt(scene->brdf);
-        programs["integrator"]["roughness"]->setFloat(scene->roughness);
-        programs["integrator"]["gamma"]->setFloat(scene->gamma);
     }
 
     // Validate everything before running 
     context->validate();
+}
+
+void Renderer::applyGammaCorrection() {
+    gammaResultBuffer = resultBuffer; 
+	float3* bufferData = (float3*)gammaResultBuffer->map();
+
+	// Store the data into a byte vector
+	for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < width; j++)
+		{
+			int index = (i * width + j) * 4;
+			float3 pixel = bufferData[(height - i - 1) * width + j];
+            pixel.x = powf(pixel.x, 1/scene->gamma); 
+            pixel.y = powf(pixel.y, 1/scene->gamma); 
+            pixel.z = powf(pixel.z, 1/scene->gamma); 
+            bufferData[(height - i - 1) * width + j] = pixel; 
+		}
+	}
+
+	gammaResultBuffer->unmap();
 }
