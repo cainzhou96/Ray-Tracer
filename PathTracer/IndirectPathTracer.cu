@@ -192,7 +192,18 @@ RT_PROGRAM void pathTracer() {
         payload.radiance += payload.throughput * mv.emission;
 	}
 	else if (nee == NEE_MIS) {
-		// TODO
+		// check for hitting light
+		for (int i = 0; i < qlights.size(); i++) {
+			float3 ln = normalize(cross(qlights[i].ab, qlights[i].ac));
+			float t = -(dot(qlights[i].a, ln) - dot(attrib.intersection, ln));
+			if (t < cf.epsilon && t > -cf.epsilon) { // hitting a light
+				payload.radiance += payload.throughput * mv.emission;
+				payload.done = true;
+				return;
+			}
+		}
+
+		payload.radiance += payload.throughput * mv.emission;
 	}
 
 	// calculate Russian Roulette
@@ -383,6 +394,32 @@ float getBRDFPDF(Attributes attrib, float3 wi) {
 	}
 	return pdf; 
 }
+
+
+float getNeePDF(float3 wi) {
+	if (qlights.size() == 0)
+		return 0;
+
+	float pdf_nee = 0;
+	// check for hitting light
+	for (int i = 0; i < qlights.size(); i++) {
+		QuadLight q = qlights[i];
+		float3 ln = normalize(cross(qlights[i].ab, qlights[i].ac));
+		float t = dot(qlights[i].a - attrib.intersection, ln) / dot(wi, ln); 
+		float3 hp = attrib.intersection + wi * t;
+		float u = dot(hp - q.a, q.ab);
+		float v = dot(hp - q.a, q.ac);
+		// hit quad light (MAYBE INCORRECT)
+		if (u >= 0 && u <= dot(q.ab, q.ab) && v >= 0 && v <= dot(q.ac, q.ac)) {
+			float A = length(cross(qlights[i].ab, qlights[i].ac));
+			float R = fabsf(t);
+			pdf_nee += R * R / (A * fabsf(dot(ln, wi)));
+		}
+	}
+	pdf_nee = pdf_nee / qlights.size();
+	return pdf_nee;
+}
+
 
 
 float power(float base, int exp) {
