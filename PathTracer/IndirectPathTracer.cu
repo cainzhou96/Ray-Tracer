@@ -2,7 +2,6 @@
 #include <optix_device.h>
 #include <optixu/optixu_math_namespace.h>
 #include "random.h"
-
 #include "Payloads.h"
 #include "Geometries.h"
 #include "Light.h"
@@ -56,6 +55,9 @@ float getBRDFPDF(float3 wi);
 float3 getNEEDirectLighting(); 
 float3 getBRDFDirectLighting(float3 wi); 
 
+float getNeePDF(float3 wi);
+float3 getNEEMIS();
+
 int isHittingLight(); 
 float power(float base, int exp);
 void printF3(float3 v); 
@@ -101,8 +103,8 @@ RT_PROGRAM void pathTracer() {
 	}
 	else if (importanceSampling == IS_BRDF) {
 		if (nee == NEE_MIS) {
-			mis_wi = getBRDFSampleRay(); 
-			float brdfPdf = getBRDFPDF(mis_wi);
+			//mis_wi = getBRDFSampleRay(); 
+			pdf = getBRDFPDF(wi);
 
 		}
 		else {
@@ -171,12 +173,15 @@ RT_PROGRAM void pathTracer() {
 		float3 finalResult = make_float3(0); 
 
 		// brdf direct lighting result
-		float3 brdfDLResult = getBRDFDirectLighting(mis_wi); 
-		finalResult += brdfDLResult; 
+		float3 brdfDLResult = getBRDFDirectLighting(wi); 
+		//finalResult += brdfDLResult; 
 
 		// nee direct lighting result
 		float3 neeDLResult = getNEEDirectLighting();
-		// finalResult += neeDLResult; 
+		finalResult += getNEEMIS();
+
+		//float w_total = 
+		//float w_brdf = 
 
 		// calculate radiance
 		payload.radiance += payload.throughput * finalResult;
@@ -449,6 +454,67 @@ float3 getNEEDirectLighting() {
 		dlResult += qlights[i].color * A / lightSamples * tempResult;
 	}
 	return dlResult; 
+}
+
+float3 getNEEMIS() {
+	MaterialValue mv = attrib.mv;
+	float3 result = make_float3(0);
+
+	const int n = 5;
+	float nee_pdfs[n];
+	float3 nee_fs[n];
+	float3 nee_xs[n];
+
+	for (int i = 0; i < n; i++) {
+		float3 f;
+
+		float A = length(cross(qlights[i].ab, qlights[i].ac));
+		float3 hp = attrib.intersection;
+		float3 sn = normalize(attrib.normal);
+		float3 ln = -normalize(cross(qlights[i].ab, qlights[i].ac));
+		float3 wo = normalize(attrib.wo);
+		float3 rl = normalize(reflect(-wo, sn));
+		float3 lp = qlights[i].a + rnd(payload.seed) * qlights[i].ab + rnd(payload.seed) * qlights[i].ac;
+
+		// check for shadow
+		float3 lightDir = normalize(lp - hp);
+		float lightDist = length(lp - hp);
+		ShadowPayload shadowPayload;
+		shadowPayload.isVisible = true;
+		Ray shadowRay = make_Ray(hp, lightDir, 1, config[0].epsilon, lightDist - config[0].epsilon);
+		rtTrace(root, shadowRay, shadowPayload);
+		// If not in shadow
+		if (shadowPayload.isVisible)
+		{
+			float G = clamp(dot(sn, lightDir), 0.0f, 1.0f) * clamp(dot((-ln), lightDir), 0.0f, 1.0f) / (lightDist * lightDist);
+			if (mv.brdf == BRDF_PHONG) {
+				f = getPhongBRDF(lightDir);
+				//f = f * G;
+			}
+			else if (mv.brdf == BRDF_GGX) {
+				f = getGGXBRDF(lightDir) * clamp(dot(sn, lightDir), 0.0f, 1.0f);
+				//f = getGGXBRDF(lightDir);
+				f = f * G;
+			}
+		}
+
+		f = qlights[i].color * A / lightSamples * f;
+		nee_xs[i] = lightDir;
+		nee_fs[i] = f;
+		float pdf = lightDist * lightDist / (A * fabsf(dot(ln, lightDir)));
+		nee_pdfs[i] = pdf;
+	}
+
+
+	for (int i = 0; i < n; i++) {
+		float3 wi = nee_xs[i];
+		float pdf_total = getNeePDF(wi) * getNeePDF(wi) + getBRDFPDF(wi) * getBRDFPDF(wi);
+		float w = nee_pdfs[i] * nee_pdfs[i] / pdf_total;
+		result += w * nee_fs[i];
+	}
+	result /= n;
+
+	return result;
 }
 
 float3 getBRDFDirectLighting(float3 wi) {
