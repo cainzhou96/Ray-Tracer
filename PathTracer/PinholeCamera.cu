@@ -36,6 +36,8 @@ RT_PROGRAM void generateRays()
 
     // Prepare a payload
     Payload payload;
+    payload.dir = dir; 
+    payload.origin = origin; 
     payload.radiance = make_float3(0.f);
     payload.throughput = make_float3(1.f);
     payload.depth = 0;

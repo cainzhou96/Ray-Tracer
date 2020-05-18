@@ -65,6 +65,9 @@ void Renderer::initPrograms()
     // Shadow Caster
     programs["shadowCaster"] = createProgram("Common.cu", "anyHit");
 
+    // Light Checker
+    programs["lightChecker"] = createProgram("LightChecker.cu", "closestHit"); 
+
     // Integrators 
     programs["raytracer"] = createProgram("RayTracer.cu", "closestHit");
     programs["analyticdirect"] = createProgram("DirectLighting.cu", "analytic");
@@ -157,6 +160,7 @@ void Renderer::buildScene()
     Material material = context->createMaterial();
     material->setClosestHitProgram(0, programs["integrator"]);
     material->setAnyHitProgram(1, programs["shadowCaster"]);
+    material->setClosestHitProgram(2, programs["lightChecker"]);
 
     // Create buffers and pass them to Optix programs that the buffers
     Buffer triBuffer = createBuffer(scene->triangles);

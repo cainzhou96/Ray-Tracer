@@ -19,3 +19,9 @@ struct ShadowPayload
 {
     int isVisible;
 };
+
+struct LightPayload
+{
+    optix::float3 emission; 
+    optix::float3 origin, dir;
+};
