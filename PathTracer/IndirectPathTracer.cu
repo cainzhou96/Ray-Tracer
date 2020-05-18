@@ -52,6 +52,7 @@ float3 getGGXBRDF(float3 wi);
 float getCosinePDF(); 
 float getHemispherePDF(); 
 float getBRDFPDF(float3 wi); 
+float getNeePDF(float3 wi); 
 
 float3 getNEEDirectLighting(); 
 float3 getBRDFDirectLighting(float3 wi); 
@@ -64,7 +65,6 @@ RT_PROGRAM void pathTracer() {
     MaterialValue mv = attrib.mv;
     Config cf = config[0];
 	float3 wi;
-	float3 mis_wi; // for mis direct lighting
 	float3 throughput;
 
 	// ### SAMPLE ###
@@ -100,19 +100,12 @@ RT_PROGRAM void pathTracer() {
 		throughput = f / pdf / N;
 	}
 	else if (importanceSampling == IS_BRDF) {
-		if (nee == NEE_MIS) {
-			mis_wi = getBRDFSampleRay(); 
-			float brdfPdf = getBRDFPDF(mis_wi);
-
+		pdf = getBRDFPDF(wi);
+		if (pdf <= 0) {
+			throughput = make_float3(0, 0, 0); 
 		}
 		else {
-			pdf = getBRDFPDF(wi);
-			if (pdf <= 0) {
-				throughput = make_float3(0, 0, 0); 
-			}
-			else {
-				throughput = f * clamp(dot(n, wi), 0.0f, 1.0f) / pdf / N;
-			}
+			throughput = f * clamp(dot(n, wi), 0.0f, 1.0f) / pdf / N;
 		}
 	}
 
@@ -168,18 +161,91 @@ RT_PROGRAM void pathTracer() {
 			return;
 		}
 
-		float3 finalResult = make_float3(0); 
+		int beta = 2; 
+		float3 DLResult = mv.emission; 
+		float3 curWi; 
+		float3 curDLResult; 
+		float3 curF; 
+		float3 curThroughput; 
+		float curBRDFPDF; 
+		float curNEEPDF; 
+		float curWeight; 
 
-		// brdf direct lighting result
-		float3 brdfDLResult = getBRDFDirectLighting(mis_wi); 
-		finalResult += brdfDLResult; 
+		// brdf
+		curWi = getBRDFSampleRay();
+		curDLResult = getBRDFDirectLighting(curWi);
+		curBRDFPDF = getBRDFPDF(curWi); 
+		curNEEPDF = getNeePDF(curWi); 
+		if (curBRDFPDF <= 0) {
+			curThroughput = make_float3(0); 
+		}
+		else {
+			curWeight = power(curBRDFPDF, beta) / (power(curBRDFPDF, beta) + power(curNEEPDF, beta)); 
+			if (mv.brdf == BRDF_PHONG) {
+				curF = getPhongBRDF(curWi); 
+			}
+			else if (mv.brdf == BRDF_GGX) {
+				curF = getGGXBRDF(curWi); 
+			}
+			curThroughput = curWeight * curF * clamp(dot(n, curWi), 0.0f, 1.0f) / curBRDFPDF; 
+		}
+		DLResult += curThroughput * curDLResult; 
 
-		// nee direct lighting result
-		float3 neeDLResult = getNEEDirectLighting();
-		// finalResult += neeDLResult; 
+		// nee
+		curDLResult = make_float3(0);
+		for (int i = 0; i < qlights.size(); i++) {
+			float A = length(cross(qlights[i].ab, qlights[i].ac));
+			float3 hp = attrib.intersection;
+			float3 sn = normalize(attrib.normal);
+			float3 ln = -normalize(cross(qlights[i].ab, qlights[i].ac));
+			float3 wo = normalize(attrib.wo);
+			float3 rl = normalize(reflect(-wo, sn));
+			int stepNum = (int)sqrt((float)lightSamples);
+			for (int ls = 0; ls < lightSamples; ls++) {
+				float3 lp;
+				// randomize a light point
+				if (lightStratify) {
+					float3 abStep = qlights[i].ab / stepNum;
+					float3 acStep = qlights[i].ac / stepNum;
+					lp = qlights[i].a + (ls % stepNum) * abStep + (ls / stepNum) * acStep + rnd(payload.seed) * abStep + rnd(payload.seed) * acStep;
+				}
+				else {
+					lp = qlights[i].a + rnd(payload.seed) * qlights[i].ab + rnd(payload.seed) * qlights[i].ac;
+				}
 
-		// calculate radiance
-		payload.radiance += payload.throughput * finalResult;
+				// check for shadow
+				float3 lightDir = normalize(lp - hp);
+				float lightDist = length(lp - hp);
+				ShadowPayload shadowPayload;
+				shadowPayload.isVisible = true;
+				Ray shadowRay = make_Ray(hp, lightDir, 1, config[0].epsilon, lightDist - config[0].epsilon);
+				rtTrace(root, shadowRay, shadowPayload);
+				// If not in shadow
+				if (shadowPayload.isVisible)
+				{
+					curDLResult = qlights[i].color; 
+					curWi = lightDir; 
+					curBRDFPDF = getBRDFPDF(curWi); 
+					curNEEPDF = getNeePDF(curWi); 
+					if (curBRDFPDF <= 0) {
+						curThroughput = make_float3(0); 
+					}
+					else {
+						curWeight = power(curNEEPDF, beta) / (power(curBRDFPDF, beta) + power(curNEEPDF, beta)); 
+						if (mv.brdf == BRDF_PHONG) {
+							curF = getPhongBRDF(curWi); 
+						}
+						else if (mv.brdf == BRDF_GGX) {
+							curF = getGGXBRDF(curWi); 
+						}
+						curThroughput = curWeight * curF * clamp(dot(n, curWi), 0.0f, 1.0f) / curNEEPDF / lightSamples; 
+					}
+					//DLResult += curThroughput * curDLResult; 
+				}
+			}
+		}
+
+		payload.radiance += payload.throughput * DLResult;
 	}
 
 	// calculate Russian Roulette
@@ -351,7 +417,7 @@ float getBRDFPDF(float3 wi) {
 		if (isnan(t))
 			t = 0;
 		pdf = (1 - t) * clamp(dot(n, wi), 0.0f, 1.0f) / M_PIf +
-			t * (mv.shininess + 1) / (2 * M_PIf) * power(dot(rl, wi), mv.shininess);
+			t * (mv.shininess + 1) / (2 * M_PIf) * power(clamp(dot(rl, wi), 0.0f, 1.0f), mv.shininess);
 	}
 	else if (mv.brdf == BRDF_GGX) {
 		float t = fmaxf(0.25f, ks / (ks + kd));
@@ -373,25 +439,31 @@ float getBRDFPDF(float3 wi) {
 
 
 float getNeePDF(float3 wi) {
+	wi = normalize(wi); 
 	if (qlights.size() == 0)
 		return 0;
 
 	float pdf_nee = 0;
-	// check for hitting light
-	for (int i = 0; i < qlights.size(); i++) {
-		QuadLight q = qlights[i];
-		float3 ln = normalize(cross(qlights[i].ab, qlights[i].ac));
-		float t = dot(qlights[i].a - attrib.intersection, ln) / dot(wi, ln); 
-		float3 hp = attrib.intersection + wi * t;
-		float u = dot(hp - q.a, q.ab);
-		float v = dot(hp - q.a, q.ac);
-		// hit quad light (MAYBE INCORRECT)
-		if (u >= 0 && u <= dot(q.ab, q.ab) && v >= 0 && v <= dot(q.ac, q.ac)) {
-			float A = length(cross(qlights[i].ab, qlights[i].ac));
-			float R = fabsf(t);
-			pdf_nee += R * R / (A * fabsf(dot(ln, wi)));
-		}
+	LightPayload lightPayload;
+	lightPayload.hit = 0;
+	lightPayload.emission = make_float3(0);
+	Ray ray = make_Ray(attrib.intersection, wi, 2, config[0].epsilon, RT_DEFAULT_MAX);
+	rtTrace(root, ray, lightPayload);
+	if (!lightPayload.hit) {
+		return 0; 
 	}
+	for (int i = 0; i < qlights.size(); i++) {
+		float cur_pdf = 0; 
+		float3 ln = -normalize(cross(qlights[i].ab, qlights[i].ac));
+		float t = -(dot(qlights[i].a, ln) - dot(lightPayload.intersection, ln));
+		if (t < config[0].epsilon && t > -config[0].epsilon) { // hitting a light
+			float A = length(cross(qlights[i].ab, qlights[i].ac));
+			float R = length(lightPayload.intersection - attrib.intersection);
+			cur_pdf = R * R / A / abs(dot(ln, wi)); 
+		}
+		pdf_nee += cur_pdf; 
+	}
+
 	pdf_nee = pdf_nee / qlights.size();
 	return pdf_nee;
 }
@@ -454,8 +526,7 @@ float3 getNEEDirectLighting() {
 float3 getBRDFDirectLighting(float3 wi) {
 	MaterialValue mv = attrib.mv;
 	LightPayload lightPayload;
-	lightPayload.origin = attrib.intersection;
-	lightPayload.dir = wi;
+	lightPayload.hit = 0; 
 	lightPayload.emission = make_float3(0);
 	Ray ray = make_Ray(attrib.intersection, wi, 2, config[0].epsilon, RT_DEFAULT_MAX);
 	rtTrace(root, ray, lightPayload);
@@ -467,7 +538,7 @@ int isHittingLight() { // return 0: not hitting light, 1: hitting front, 2: hitt
 		float3 ln = -normalize(cross(qlights[i].ab, qlights[i].ac));
 		float t = -(dot(qlights[i].a, ln) - dot(attrib.intersection, ln));
 		if (t < config[0].epsilon && t > -config[0].epsilon) { // hitting a light
-			if (dot(ln, -normalize(payload.dir))) {
+			if (dot(ln, normalize(attrib.wo)) > 0) {
 				return 1; 
 			}
 			else {

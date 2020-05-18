@@ -14,8 +14,10 @@ rtDeclareVariable(Attributes, attrib, attribute attrib, );
 
 RT_PROGRAM void closestHit()
 {
+    payload.hit = 1; 
+    payload.intersection = attrib.intersection; 
     float3 n = normalize(attrib.normal); 
-    float3 w = -normalize(payload.dir); 
+    float3 w = normalize(attrib.wo); 
 
     if (dot(n, w) > 0) {
         payload.emission = attrib.mv.emission; 

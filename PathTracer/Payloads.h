@@ -22,6 +22,7 @@ struct ShadowPayload
 
 struct LightPayload
 {
+    int hit; 
     optix::float3 emission; 
-    optix::float3 origin, dir;
+    optix::float3 intersection;
 };
