@@ -176,6 +176,7 @@ RT_PROGRAM void pathTracer() {
 		curDLResult = getBRDFDirectLighting(curWi);
 		curBRDFPDF = getBRDFPDF(curWi); 
 		curNEEPDF = getNeePDF(curWi); 
+		n = normalize(attrib.normal); 
 		if (curBRDFPDF <= 0) {
 			curThroughput = make_float3(0); 
 		}
@@ -227,7 +228,10 @@ RT_PROGRAM void pathTracer() {
 					curWi = lightDir; 
 					curBRDFPDF = getBRDFPDF(curWi); 
 					curNEEPDF = getNeePDF(curWi); 
-					if (curBRDFPDF <= 0) {
+					if (curNEEPDF == 0) {
+						curThroughput = make_float3(0); // hack it for now
+					}
+					else if (curBRDFPDF <= 0) {
 						curThroughput = make_float3(0); 
 					}
 					else {
@@ -238,13 +242,12 @@ RT_PROGRAM void pathTracer() {
 						else if (mv.brdf == BRDF_GGX) {
 							curF = getGGXBRDF(curWi); 
 						}
-						curThroughput = curWeight * curF * clamp(dot(n, curWi), 0.0f, 1.0f) / curNEEPDF / lightSamples; 
+						curThroughput =  curWeight * curF * clamp(dot(sn, curWi), 0.0f, 1.0f) / curNEEPDF / lightSamples / qlights.size(); 
+						DLResult += curThroughput * curDLResult; 
 					}
-					//DLResult += curThroughput * curDLResult; 
 				}
 			}
 		}
-
 		payload.radiance += payload.throughput * DLResult;
 	}
 
@@ -334,7 +337,7 @@ float3 getBRDFSampleRay() {
 		if (rnd(payload.seed) <= t) { // specular
 			float rand = rnd(payload.seed);
 			float theta = atanf(mv.roughness * sqrtf(rand) / sqrtf(1 - rand));
-			float3 h = normalize(make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta)));
+			float3 h = make_float3(cosf(phi) * sinf(theta), sinf(phi) * sinf(theta), cosf(theta));
 			float3 w = n;
 			h = transformRay(h, w);
 			wi = reflect(-wo, h);
@@ -432,14 +435,39 @@ float getBRDFPDF(float3 wi) {
 		}
 		float D = alpha_square / (M_PIf * power(cosf(theta_h), 4) *
 			power((alpha_square + tanf(theta_h) * tanf(theta_h)), 2));
-		pdf = (1 - t) * clamp(dot(n, wi), 0.0f, 1.0f) / M_PIf + t * D * dot(n, h) / (4 * clamp(dot(h, wi), 0.0f, 1.0f));
+		pdf = (1 - t) * clamp(dot(n, wi), 0.0f, 1.0f) / M_PIf + t * D * dot(n, h) / (4 * dot(h, wi));
 	}
 	return pdf; 
 }
 
 
 float getNeePDF(float3 wi) {
-	wi = normalize(wi); 
+	if (qlights.size() == 0)
+		return 0;
+
+	float pdf_nee = 0;
+	// check for hitting light
+	for (int i = 0; i < qlights.size(); i++) {
+		QuadLight q = qlights[i];
+		float3 ln = normalize(cross(qlights[i].ab, qlights[i].ac));
+		float t = dot(qlights[i].a - attrib.intersection, ln) / dot(wi, ln);
+		float3 hp = attrib.intersection + wi * t;
+		float u = dot(hp - q.a, q.ab);
+		float v = dot(hp - q.a, q.ac);
+		// hit quad light (MAYBE INCORRECT)
+		// for correction 
+		float3 ab = qlights[i].ab + config[0].epsilon * normalize(qlights[i].ab); 
+		float3 ac = qlights[i].ac + config[0].epsilon * normalize(qlights[i].ac); 
+		if (u >= 0 && u <= dot(ab, ab) && v >= 0 && v <= dot(ac, ac)) {
+			float A = length(cross(qlights[i].ab, qlights[i].ac));
+			float R = fabsf(t);
+			pdf_nee += R * R / (A * fabsf(dot(ln, wi)));
+		}
+	}
+	pdf_nee = pdf_nee / qlights.size();
+	return pdf_nee;
+
+	/*
 	if (qlights.size() == 0)
 		return 0;
 
@@ -466,6 +494,7 @@ float getNeePDF(float3 wi) {
 
 	pdf_nee = pdf_nee / qlights.size();
 	return pdf_nee;
+	*/
 }
 
 float3 getNEEDirectLighting() {
@@ -511,7 +540,7 @@ float3 getNEEDirectLighting() {
 					f = f * G;
 				}
 				else if (mv.brdf == BRDF_GGX) {
-					f = getGGXBRDF(lightDir) * clamp(dot(sn, lightDir), 0.0f, 1.0f);
+					f = getGGXBRDF(lightDir);
 					f = f * G;
 				}
 				tempResult += f;
