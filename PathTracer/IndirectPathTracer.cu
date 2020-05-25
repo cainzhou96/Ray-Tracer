@@ -116,7 +116,7 @@ RT_PROGRAM void pathTracer() {
 		int lightHit = isHittingLight(); 
 		if (lightHit == 1) { // hit front 
 			if (payload.depth == 0) {
-				payload.radiance += mv.emission;
+				payload.radiance += payload.throughput * mv.emission;
 			}
 			payload.done = true; 
 			return; 
@@ -152,7 +152,9 @@ RT_PROGRAM void pathTracer() {
 		// check for hitting light
 		int lightHit = isHittingLight();
 		if (lightHit == 1) { // hit front 
-			payload.radiance += payload.throughput * mv.emission;
+			if (payload.depth == 0) {
+				payload.radiance += payload.throughput * mv.emission;
+			}
 			payload.done = true;
 			return;
 		}
@@ -449,19 +451,20 @@ float getNeePDF(float3 wi) {
 	// check for hitting light
 	for (int i = 0; i < qlights.size(); i++) {
 		QuadLight q = qlights[i];
-		float3 ln = normalize(cross(qlights[i].ab, qlights[i].ac));
+		float3 ln = -normalize(cross(qlights[i].ab, qlights[i].ac));
 		float t = dot(qlights[i].a - attrib.intersection, ln) / dot(wi, ln);
-		float3 hp = attrib.intersection + wi * t;
-		float u = dot(hp - q.a, q.ab);
-		float v = dot(hp - q.a, q.ac);
-		// hit quad light (MAYBE INCORRECT)
-		// for correction 
-		float3 ab = qlights[i].ab + config[0].epsilon * normalize(qlights[i].ab); 
-		float3 ac = qlights[i].ac + config[0].epsilon * normalize(qlights[i].ac); 
-		if (u >= 0 && u <= dot(ab, ab) && v >= 0 && v <= dot(ac, ac)) {
-			float A = length(cross(qlights[i].ab, qlights[i].ac));
-			float R = fabsf(t);
-			pdf_nee += R * R / (A * fabsf(dot(ln, wi)));
+		if (t > 0) {
+			float3 hp = attrib.intersection + wi * t;
+			float u = dot(hp - q.a, q.ab);
+			float v = dot(hp - q.a, q.ac);
+			// hit quad light (MAYBE INCORRECT)
+			float3 ab = qlights[i].ab + config[0].epsilon * normalize(qlights[i].ab);
+			float3 ac = qlights[i].ac + config[0].epsilon * normalize(qlights[i].ac);
+			if (u >= 0 && u <= dot(ab, ab) && v >= 0 && v <= dot(ac, ac)) {
+				float A = length(cross(qlights[i].ab, qlights[i].ac));
+				float R = fabsf(t);
+				pdf_nee += R * R / (A * fabsf(dot(-ln, wi)));
+			}
 		}
 	}
 	pdf_nee = pdf_nee / qlights.size();
