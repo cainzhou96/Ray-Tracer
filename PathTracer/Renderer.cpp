@@ -67,6 +67,7 @@ void Renderer::initPrograms()
 
     // Light Checker
     programs["lightChecker"] = createProgram("LightChecker.cu", "closestHit"); 
+    programs["lightChecker"]["backgroundColor"]->setFloat(0.f, 0.f, 0.f);
 
     // Integrators 
     programs["raytracer"] = createProgram("RayTracer.cu", "closestHit");

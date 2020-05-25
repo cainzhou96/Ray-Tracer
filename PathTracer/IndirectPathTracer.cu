@@ -233,10 +233,10 @@ RT_PROGRAM void pathTracer() {
 					if (curNEEPDF == 0) {
 						curThroughput = make_float3(0); // hack it for now
 					}
-					else if (curBRDFPDF <= 0) {
-						curThroughput = make_float3(0); 
-					}
 					else {
+						if (curBRDFPDF <= 0) {
+							curBRDFPDF = 0; 
+						}
 						curWeight = power(curNEEPDF, beta) / (power(curBRDFPDF, beta) + power(curNEEPDF, beta)); 
 						if (mv.brdf == BRDF_PHONG) {
 							curF = getPhongBRDF(curWi); 
@@ -244,7 +244,8 @@ RT_PROGRAM void pathTracer() {
 						else if (mv.brdf == BRDF_GGX) {
 							curF = getGGXBRDF(curWi); 
 						}
-						curThroughput =  curWeight * curF * clamp(dot(sn, curWi), 0.0f, 1.0f) / curNEEPDF / lightSamples / qlights.size(); 
+						float G = clamp(dot(sn, curWi), 0.0f, 1.0f) * clamp(dot((-ln), curWi), 0.0f, 1.0f) / (lightDist * lightDist);
+						curThroughput = curWeight * curF * G * A / lightSamples; 
 						DLResult += curThroughput * curDLResult; 
 					}
 				}
@@ -463,7 +464,7 @@ float getNeePDF(float3 wi) {
 			if (u >= 0 && u <= dot(ab, ab) && v >= 0 && v <= dot(ac, ac)) {
 				float A = length(cross(qlights[i].ab, qlights[i].ac));
 				float R = fabsf(t);
-				pdf_nee += R * R / (A * fabsf(dot(-ln, wi)));
+				pdf_nee += R * R / (A * fabsf(dot(ln, wi)));
 			}
 		}
 	}
